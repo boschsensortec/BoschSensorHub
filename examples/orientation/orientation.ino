@@ -1,9 +1,10 @@
+#include <Arduino.h>
 #include <Wire.h>
-
-#include "bhy.h"
-#include "firmware\Bosch_PCB_7183_di03_BMI160_BMM150-7183_di03.2.1.11696_170103.h"
+#include <bhy.h>
+#include <firmware/Bosch_PCB_7183_di03_BMI160-7183_di03.2.1.11696_170103.h>
 
 #define BHY_INT_PIN 10
+
 
 BHYSensor bhi160;
 
@@ -14,18 +15,10 @@ uint8_t status;
 
 bool checkSensorStatus(void);
 
-void bhyInterruptHandler(void)
-{
-    intrToggled = true;
-}
-void waitForBhyInterrupt(void)
-{
-    while (!intrToggled)
-        ;
-    intrToggled = false;
-}
+
 void orientationHandler(bhyVector data, bhyVirtualSensor type)
 {
+    Serial.println("new data");
     heading = data.x;
     roll = data.z;
     pitch = data.y;
@@ -33,84 +26,100 @@ void orientationHandler(bhyVector data, bhyVirtualSensor type)
     newOrientationData = true;
 }
 
+
+void metaHandler(bhyMetaEvent *event, bhyMetaEventType type) {
+    Serial.println("hei");
+}
+bool waitForBhyInterrupt() {
+    delay(100);
+    bhyInterruptStatus intStatus;
+    bhi160.getInterruptStatus(&intStatus);
+    Serial.println("waiting for interrupt");
+    return (intStatus.interrupt_status != 1);
+}
+
 void setup()
 {
     Serial.begin(115200);
     Wire.begin();
 
-    if (Serial)
-    {
-        Serial.println("Serial working");
-    }
-
-    attachInterrupt(BHY_INT_PIN, bhyInterruptHandler, RISING);
-
     bhi160.begin(BHY_I2C_ADDR2);
 
     /* Check to see if something went wrong. */
-    if (!checkSensorStatus())
-        return;
+    // !checkSensorStatus();
 
     Serial.println("Sensor found over I2C! Product ID: 0x" + String(bhi160.productId, HEX));
 
-    Serial.println("Uploading Firmware.");
-    bhi160.loadFirmware(bhy1_fw);
+    if (bhi160.loadFirmware(bhy1_fw) != 0) {
+        Serial.println(F("oobs. something didnt go right."));
+    }
 
-    if (!checkSensorStatus())
-        return;
+    while (waitForBhyInterrupt());  /* Wait for meta events from boot up */
+    Serial.println(F("Firmware booted"));
 
-    intrToggled = false; /* Clear interrupt status received during firmware upload */
-    waitForBhyInterrupt();  /* Wait for meta events from boot up */
-    Serial.println("Firmware booted");
 
     /* Install a metaevent callback handler and a timestamp callback handler here if required before the first run */
+    int8_t e = bhi160.installMetaCallback(BHY_META_TYPE_SELF_TEST_RESULTS, false, metaHandler);
+    Serial.println(e, HEX);
+    // Install a vector callback function to process the data received from the wake up Orientation sensor
+    bhi160.setHostInterfaceControlBit(BHY_REQUEST_SENSOR_SELF_TEST_BIT, 1);
     bhi160.run(); /* The first run processes all boot events */
+
+    if (bhi160.configVirtualSensor(BHY_VS_ACCELEROMETER, true, BHY_FLUSH_ALL, 25, 0, 0, 0))
+    {
+        //Serial.println(F("Failed to enable sensor"));
+        Serial.println("Failed to enable virtual sensor (" + bhi160.getSensorName(BHY_VS_ACCELEROMETER) + "). Loaded firmware may not support requested sensor id.");
+    }
+    else
+        Serial.println(F("Sensor enabled"));
+        //Serial.println(bhi160.getSensorName(BHY_VS_ORIENTATION) + " virtual sensor enabled");
+
     
-    /* Install a vector callback function to process the data received from the wake up Orientation sensor */
-    if (bhi160.installSensorCallback(BHY_VS_ORIENTATION, true, orientationHandler))
+    int8_t ret = bhi160.installSensorCallback(BHY_VS_ACCELEROMETER, true, orientationHandler);
+    Serial.println(ret, HEX);
+    if (ret)
     {
         checkSensorStatus();
-
-        return;
     }
     else
-        Serial.println("Orientation callback installed");
+        Serial.println(F("Orientation callback installed"));
 
-    /* Enable the Orientation virtual sensor that gives you the heading, roll, pitch
-       based of data from the accelerometer, gyroscope and magnetometer.
-       The sensor is set into wake up mode so as to interrupt the host when a new sample is available
-       Additionally, the FIFO buffer of the sensor is flushed for all previous data
-       The maximum report latency of the sensor sample, the sensitivity and the dynamic range
-       are set to 0
-     */
-    if (bhi160.configVirtualSensor(BHY_VS_ORIENTATION, true, BHY_FLUSH_ALL, 200, 0, 0, 0))
-    {
-        Serial.println("Failed to enable virtual sensor (" + bhi160.getSensorName(
-                           BHY_VS_ORIENTATION) + "). Loaded firmware may not support requested sensor id.");
-    }
-    else
-        Serial.println(bhi160.getSensorName(BHY_VS_ORIENTATION) + " virtual sensor enabled");
+
 
 }
 
 void loop()
 {
-    if (intrToggled)
-    {
-        intrToggled = false;
         bhi160.run();
-        checkSensorStatus();
-        if (newOrientationData)
-        {
-            /* Can also be viewed using the plotter */
-            Serial.println(String(heading) + "," + String(pitch) + "," + String(roll) + "," + String(status));
-            newOrientationData = false;
-        }
-    }
+        Serial.println(String(heading) + "," + String(pitch) + "," + String(roll) + "," + String(status));
+
+        
+        //delay(1000);
+        
 }
 
 bool checkSensorStatus(void)
 {
+
+    bhyChipStatus stats;
+    bhi160.getChipStatus(&stats);
+    Serial.println(F("Chip status:"));
+    Serial.println(stats.ee_upload_done,HEX);
+    Serial.println(stats.ee_upload_error,HEX);
+    Serial.println(stats.eeprom_detected,HEX);
+    Serial.println(stats.firmware_idle,HEX);
+    Serial.println(stats.no_eeprom,HEX);
+
+/*
+
+
+bhyPhysicalStatus a,b,c;
+bhi160.getPhysicalSensorStatus(&a,&b,&c);
+
+Serial.println(a.flag,HEX);
+Serial.println(b.flag,HEX);
+Serial.println(c.flag,HEX);
+*/
     if (bhi160.status == BHY_OK)
         return true;
 

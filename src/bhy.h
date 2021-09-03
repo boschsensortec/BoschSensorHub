@@ -51,7 +51,7 @@
 #include "bhy_defs.h"
 
 #ifndef DEBUG_MODE
-#define DEBUG_MODE
+//#define DEBUG_MODE
 #endif
 
 /** BHY Size Definitions */

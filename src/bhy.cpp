@@ -148,7 +148,7 @@ int8_t BHYSensor::loadFirmware(const uint8_t *bhyFW)
 
     for (uint8_t i = 0; i < BHY_SIGNATURE_MEM_LEN; ++i)
     {
-        fwHeader[i] = bhyFW[i];
+        fwHeader[i] = pgm_read_byte_near(bhyFW+i); 
     }
 
     // Verify the signature
@@ -186,7 +186,7 @@ int8_t BHYSensor::loadFirmware(const uint8_t *bhyFW)
     }
 
     // Remove the first 16 bytes
-    uint32_t fwLength = 16 + bhyFW[12] + ((uint32_t)bhyFW[13] << 8);
+    uint32_t fwLength = 16 + pgm_read_byte_near(bhyFW+12) + ((uint32_t)pgm_read_byte_near(bhyFW+13) << 8);
     uint32_t dataToProcess = fwLength - (BHY_SIGNATURE_MEM_LEN - 1);
 
 #ifdef DEBUG_MODE
@@ -219,23 +219,20 @@ int8_t BHYSensor::loadFirmware(const uint8_t *bhyFW)
         return status;
 
     uint32_t nLoops = dataToProcess / BHY_RAM_WRITE_LENGTH_API;
+    
 
     uint8_t fwSnippet[BHY_RAM_WRITE_LENGTH_API] = { 0, };
     uint32_t offset = (BHY_SIGNATURE_MEM_LEN - 1);
     uint32_t bytesToWrite;
     int tries = 5;
     status = BHY_ERROR;
-
     // If a successful status was received after the load of firmware, break or else if tries run out
     while ((tries-- > 0) && (status != 0))
     {
         offset = (BHY_SIGNATURE_MEM_LEN - 1);
         for (uint16_t i = 0; i <= nLoops; ++i)
         {
-            bytesToWrite =
-                ((i ==
-                  nLoops) ? (dataToProcess % BHY_RAM_WRITE_LENGTH_API) : BHY_RAM_WRITE_LENGTH_API) /
-                BHY_RAM_WRITE_LENGTH;
+            bytesToWrite = ((i == nLoops) ? (dataToProcess % BHY_RAM_WRITE_LENGTH_API) : BHY_RAM_WRITE_LENGTH_API) / BHY_RAM_WRITE_LENGTH;
 
             // Reverse the data
             // 32bit processor (4 bytes) and endianess of the FW to be changed before upload.
@@ -243,8 +240,7 @@ int8_t BHYSensor::loadFirmware(const uint8_t *bhyFW)
             {
                 for (uint32_t k = 0; k < BHY_RAM_WRITE_LENGTH; ++k)
                 {
-                    fwSnippet[k +
-                              ((j - 1) * BHY_RAM_WRITE_LENGTH)] = bhyFW[offset + BHY_RAM_WRITE_LENGTH * j - (k + 1)];
+                    fwSnippet[k + ((j - 1) * BHY_RAM_WRITE_LENGTH)] = pgm_read_byte_near(bhyFW+offset + BHY_RAM_WRITE_LENGTH * j - (k + 1));
                 }
             }
 
@@ -267,6 +263,7 @@ int8_t BHYSensor::loadFirmware(const uint8_t *bhyFW)
     uint32_t crcFromDevice = getBhyCrc();
 
 #ifdef DEBUG_MODE
+
     if (debugOut && (debugLevel >= BHY_INFORMATIVE))
     {
         debugOut->print("Expected CRC: 0x");
@@ -371,7 +368,6 @@ int8_t BHYSensor::setChipControl(uint8_t value)
 
 int8_t BHYSensor::getHostStatus(bhyHostStatus *hostStatus)
 {
-    uint8_t data = 0;
 
     status = read(BHY_REG_HOST_STATUS_ADDR, &hostStatus->value);
 
@@ -622,6 +618,7 @@ int8_t BHYSensor::updateBuffer()
 
     if (bufferCapacity == 0)
     {
+        
 #ifdef DEBUG_MODE
         if (debugOut && (debugLevel >= BHY_DEBUG))
         {
@@ -648,6 +645,8 @@ int8_t BHYSensor::updateBuffer()
 
     if (toRead == 0)
     {
+
+        
 #ifdef DEBUG_MODE
         if (debugOut && (debugLevel >= BHY_DEBUG))
         {
@@ -745,7 +744,6 @@ int8_t BHYSensor::updateBuffer()
 uint8_t BHYSensor::checkForData()
 {
     bytesWaiting = readShort(BHY_REG_BYTES_REMAINING_ADDR);
-
 #ifdef DEBUG_MODE
     if (debugOut && (debugLevel >= BHY_INFORMATIVE))
     {
@@ -1222,11 +1220,11 @@ void BHYSensor::moveBufferCursorBack(uint8_t number)
 
 void BHYSensor::run(void)
 {
+    
     do
     {
         updateBuffer();
     } while (bytesWaiting);
-
     do
     {
         processEvent();
@@ -2533,6 +2531,7 @@ int8_t BHYSensor::write(uint8_t regAddr, uint8_t *data, uint16_t length)
 
     // Done writting, end the transmission
     int8_t returned = Wire.endTransmission();
+
 
 #ifdef DEBUG_MODE
     if (returned && debugOut && (debugLevel >= BHY_ERROR))
